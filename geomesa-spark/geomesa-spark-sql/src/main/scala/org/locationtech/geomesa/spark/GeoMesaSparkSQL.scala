@@ -242,8 +242,14 @@ case class GeoMesaRelation(sqlContext: SQLContext,
   lazy val rawRDD: SpatialRDD = buildRawRDD
 
   def buildRawRDD: SpatialRDD = {
+    val conf = new Configuration()
+    val zookeepers: String = Try(params("hbase.zookeepers").toString).getOrElse(null)
+    if (null != zookeepers && zookeepers.nonEmpty && conf.get("hbase.zookeeper.quorum") == null) {
+      conf.set("hbase.zookeeper.quorum", zookeepers)
+    }
+
     val raw = GeoMesaSpark(params).rdd(
-      new Configuration(), sqlContext.sparkContext, params,
+      conf, sqlContext.sparkContext, params,
       new Query(params(GEOMESA_SQL_FEATURE), ECQL.toFilter(initialQuery)))
 
     if (raw.getNumPartitions != numPartitions && params.contains("partitions")) {
@@ -611,8 +617,13 @@ object RelationUtils extends LazyLogging {
          |requiredColumns = ${requiredColumns.mkString(",")}""".stripMargin)
     val compiledCQL = filters.flatMap(SparkUtils.sparkFilterToCQLFilter).foldLeft[org.opengis.filter.Filter](filt) { (l, r) => ff.and(l, r) }
     val requiredAttributes = requiredColumns.filterNot(_ == "__fid__")
+    val conf = new Configuration(ctx.hadoopConfiguration)
+    val zookeepers: String = Try(params("hbase.zookeepers").toString).getOrElse(null)
+    if (null != zookeepers && zookeepers.nonEmpty) {
+      conf.set("hbase.zookeeper.quorum", zookeepers)
+    }
     val rdd = GeoMesaSpark(params).rdd(
-      new Configuration(ctx.hadoopConfiguration), ctx, params,
+      conf, ctx, params,
       new Query(params(GEOMESA_SQL_FEATURE), compiledCQL, requiredAttributes))
 
     val extractors = SparkUtils.getExtractors(requiredColumns, schema)
